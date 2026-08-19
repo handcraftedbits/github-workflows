@@ -10,14 +10,14 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Ref to publish (e.g. release/1.7.1).  Defaults to this branch.'
+        description: 'Ref to publish (e.g. release/1.0.0).  Defaults to this branch.'
         type: string
         required: false
         default: ''
 
 jobs:
   publish:
-    uses: handcraftedbits/github-workflows/.github/workflows/maven-central-publish.yml@v1
+    uses: handcraftedbits/github-workflows/.github/workflows/maven-publish.yml@v1
     with:
       ref: ${{ inputs.ref || '' }}
     # If names match exactly:
