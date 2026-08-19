@@ -1,0 +1,29 @@
+# Copy into a consuming project as .github/workflows/maven-publish.yml.
+name: Publish
+
+on:
+  push:
+    branches:
+      - development
+    tags:
+      - 'release/*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Ref to publish (e.g. release/1.7.1).  Defaults to this branch.'
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  publish:
+    uses: handcraftedbits/github-workflows/.github/workflows/maven-central-publish.yml@v1
+    with:
+      ref: ${{ inputs.ref || '' }}
+    # If names match exactly:
+    # secrets: inherit
+    secrets:
+      MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+      MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
