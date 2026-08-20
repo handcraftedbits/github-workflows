@@ -1,71 +1,65 @@
 name: Publish to Maven Central
 
 # Reusable workflow: runs `mvn -Prelease deploy`.
-#
-# The `release` profile carries the GPG signing and central-publishing plugin
-# configuration and is therefore always activated, for snapshots as well as
-# releases.  Whether a release or a snapshot is produced is decided by the ref
-# being built, not by this workflow: maven-git-versioning-extension resolves the
-# version from a detached `release/*` tag, and produces `<revision>-SNAPSHOT`
-# for anything else.  Snapshots land in the Central snapshot repository;
-# releases are staged in the Portal and auto-published.
-
 on:
   workflow_call:
     inputs:
-      ref:
-        description: 'Git ref (tag, branch, SHA) to check out. Defaults to the ref that triggered the caller. Must be a `release/*` tag to produce a release version.'
-        type: string
-        required: false
-        default: ''
-      java-version:
-        description: 'Java version to build with.'
-        type: string
-        required: false
-        default: '25'
-      java-distribution:
-        description: 'JDK distribution passed to actions/setup-java.'
-        type: string
-        required: false
-        default: 'temurin'
-      maven-args:
-        description: 'Extra arguments appended to the Maven command line.'
-        type: string
-        required: false
-        default: ''
-      working-directory:
-        description: 'Directory containing the root pom.xml.'
-        type: string
-        required: false
-        default: '.'
-      runs-on:
-        description: 'Runner label for the job.'
-        type: string
-        required: false
-        default: 'ubuntu-latest'
       environment:
         description: 'Optional GitHub environment to run in (for required reviewers / scoped secrets).'
         type: string
         required: false
         default: ''
+      java-distribution:
+        description: 'JDK distribution passed to actions/setup-java.'
+        type: string
+        required: false
+        default: 'temurin'
+      java-version:
+        description: 'Java version to build with.'
+        type: string
+        required: false
+        default: '25'
+      maven-args:
+        description: 'Extra arguments appended to the Maven command line.'
+        type: string
+        required: false
+        default: ''
+      ref:
+        description: 'Git ref (tag, branch, SHA) to check out. Defaults to the ref that triggered the caller. Must be a `release/*` tag to produce a release version.'
+        type: string
+        required: false
+        default: ''
+      runs-on:
+        description: 'Runner label for the job.'
+        type: string
+        required: false
+        default: 'ubuntu-latest'
       timeout-minutes:
         description: 'Job timeout in minutes.'
         type: number
         required: false
         default: 30
+      working-directory:
+        description: 'Directory containing the root pom.xml.'
+        type: string
+        required: false
+        default: '.'
     secrets:
-      MAVEN_CENTRAL_USERNAME:
-        description: 'Central Portal user token username (https://central.sonatype.com/account).'
+      GPG_KEY_FINGERPRINT:
+        description: 'Fingerprint of the key to sign with.  Only needed when the export contains more than one usable secret key, since the signer otherwise picks the first one and does not check that it can sign.'
+        required: false
+      GPG_PASSPHRASE:
+        description: 'Passphrase for the GPG private key.  Omit if the key has none.'
+        required: false
+      GPG_PRIVATE_KEY:
+        description: 'ASCII-armored GPG private key used to sign artifacts.'
         required: true
       MAVEN_CENTRAL_PASSWORD:
         description: 'Central Portal user token password.'
         required: true
-      GPG_PRIVATE_KEY:
-        description: 'ASCII-armored GPG private key used to sign artifacts.'
+      MAVEN_CENTRAL_USERNAME:
+        description: 'Central Portal user token username (https://central.sonatype.com/account).'
         required: true
-      GPG_PASSPHRASE:
-        description: 'Passphrase for the GPG private key.  Omit if the key has none.'
-        required: false
     outputs:
       version:
         description: 'The project version that was deployed.'
@@ -85,27 +79,20 @@ jobs:
 
     steps:
       - name: Check out sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
-          # Full history and all tags: maven-git-versioning-extension reads the
-          # ref from the local repository, so a shallow clone can silently
-          # produce the wrong version.
           fetch-depth: 0
 
       - name: Set up JDK ${{ inputs.java-version }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: ${{ inputs.java-version }}
           distribution: ${{ inputs.java-distribution }}
           cache: maven
-          # Writes ~/.m2/settings.xml with a `central` server entry, matching
-          # <publishingServerId> in the release profile.
           server-id: central
           server-username: MAVEN_CENTRAL_USERNAME
           server-password: MAVEN_CENTRAL_PASSWORD
-          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Resolve project version
         id: version
@@ -116,10 +103,25 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Deploying \`$version\`" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Prepare signing
+        env:
+          MAVEN_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
+        run: |
+          if [ -z "$MAVEN_GPG_KEY" ]; then
+            echo "::error::Secret GPG_PRIVATE_KEY is empty.  Set it on the calling repository under exactly that name."
+            exit 1
+          fi
+
+          if [ -n "$GPG_KEY_FINGERPRINT" ]; then
+            echo "MAVEN_GPG_KEY_FINGERPRINT=$GPG_KEY_FINGERPRINT" >> "$GITHUB_ENV"
+          fi
+
       - name: Deploy
         working-directory: ${{ inputs.working-directory }}
         env:
           MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn --batch-mode --no-transfer-progress -Prelease deploy ${{ inputs.maven-args }}
