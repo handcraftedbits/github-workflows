@@ -117,6 +117,10 @@ jobs:
             echo "MAVEN_GPG_KEY_FINGERPRINT=$GPG_KEY_FINGERPRINT" >> "$GITHUB_ENV"
           fi
 
+          printf '%s\n' "$MAVEN_GPG_KEY" | gpg --show-keys --with-colons \
+            | awk -F: '$1 == "fpr" { print "fingerprint: " $10 }
+                       $1 == "uid" { print "uid:         " $10 }'
+
       - name: Deploy
         working-directory: ${{ inputs.working-directory }}
         env:
